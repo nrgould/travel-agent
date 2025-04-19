@@ -1,0 +1,1 @@
+Don't use Framer Motion. use motion react, which has replaced framer. It has the same functionality.

@@ -31,18 +31,18 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
 
 	return (
 		<Card className='p-1.5 shadow-lg border bg-card/80 backdrop-blur-sm'>
-			<ToggleGroup
-				type='multiple' // Allow multiple toggles to be pressed
-				variant='outline'
-				value={currentValues} // Controlled component
-				onValueChange={handleValueChange}
-				className='flex items-center space-x-1'
-			>
-				<ToggleGroupItem value='map' aria-label='Toggle map'>
-					<Map className='h-4 w-4' />
-				</ToggleGroupItem>
-				<ToggleGroupItem value='nodes' aria-label='Toggle nodes'>
-					<SquareMousePointer className='h-4 w-4' />
+		<ToggleGroup
+			type='multiple' // Allow multiple toggles to be pressed
+			variant='default'
+			value={currentValues} // Controlled component
+			onValueChange={handleValueChange}
+			// className='flex items-center'
+		>
+			<ToggleGroupItem value='map' aria-label='Toggle map'>
+				<Map className='h-4 w-4' />
+			</ToggleGroupItem>
+			<ToggleGroupItem value='nodes' aria-label='Toggle nodes'>
+				<SquareMousePointer className='h-4 w-4' />
 				</ToggleGroupItem>
 			</ToggleGroup>
 		</Card>

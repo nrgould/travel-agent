@@ -12,16 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-	Plane,
-	Train,
-	Bus,
-	MapPin,
-	Calendar,
-	Clock,
-	Heart,
-	Info,
-} from 'lucide-react';
+import { Plane, Train, Bus, MapPin, Calendar, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Define the shape of our node data
@@ -89,21 +80,6 @@ export function DestinationNode({ data, isConnectable }: DestinationNodeProps) {
 						>
 							{data.type || 'destination'}
 						</Badge>
-					</div>
-					<div className='flex items-center justify-end'>
-						<Button
-							variant='ghost'
-							size='icon'
-							className='h-7 w-7 text-muted-foreground hover:text-primary'
-							onClick={() => setIsFavorite(!isFavorite)}
-						>
-							<Heart
-								className={cn(
-									'h-4 w-4',
-									isFavorite && 'fill-red-500 text-red-500'
-								)}
-							/>
-						</Button>
 					</div>
 					{data.description && (
 						<CardDescription className='text-xs line-clamp-2 mt-1'>

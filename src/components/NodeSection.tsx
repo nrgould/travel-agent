@@ -6,9 +6,7 @@ import {
 	addEdge,
 	Background,
 	Connection,
-	Controls,
 	Edge,
-	MiniMap,
 	Node,
 	useEdgesState,
 	useNodesState,
@@ -43,30 +41,6 @@ const initialNodes: Node<DestinationNodeData>[] = [
 			type: 'city',
 			stayDuration: 4,
 			bestTime: 'Apr-May or Sep-Oct',
-		},
-		type: 'destination',
-	},
-	{
-		id: '3',
-		position: { x: 850, y: 150 }, // Directly right of Vienna
-		data: {
-			label: 'Prague',
-			description: 'City of a Hundred Spires with medieval architecture',
-			type: 'city',
-			stayDuration: 3,
-			bestTime: 'Mar-May or Sep-Nov',
-		},
-		type: 'destination',
-	},
-	{
-		id: '4',
-		position: { x: 450, y: 400 }, // Below Vienna/Munich
-		data: {
-			label: 'Neuschwanstein',
-			description: 'Fairytale castle that inspired Disney',
-			type: 'landmark',
-			stayDuration: 1,
-			bestTime: 'Jun-Sep',
 		},
 		type: 'destination',
 	},
