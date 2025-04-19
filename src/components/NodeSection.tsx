@@ -1,6 +1,14 @@
 'use client';
 
-import React, { useCallback, useMemo } from 'react';
+import React, {
+	useCallback,
+	useMemo,
+	useRef,
+	createContext,
+	useContext,
+	useEffect,
+	useState,
+} from 'react';
 import {
 	ReactFlow,
 	addEdge,
@@ -8,149 +16,350 @@ import {
 	Connection,
 	Edge,
 	Node,
-	useEdgesState,
-	useNodesState,
+	EdgeTypes,
+	NodeTypes,
+	ReactFlowProvider,
+	NodeChange,
+	applyNodeChanges,
+	EdgeChange,
+	applyEdgeChanges,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { DestinationNode, DestinationNodeData } from './DestinationNode';
+import CustomEdge from './CustomEdge';
 import {
-	DestinationNode,
-	DestinationNodeData,
-	TransportIcon,
-} from './DestinationNode';
+	ContextMenu,
+	ContextMenuContent,
+	ContextMenuItem,
+	ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { nanoid } from 'nanoid';
+import { useNodeContext as useGlobalNodeContext } from './NodeContext';
+import {
+	getFlowData,
+	addNodeAction,
+	updateNodePositionAction,
+	updateNodeDetailsAction,
+	addEdgeAction,
+} from '@/app/actions';
+import { toast } from '@/components/ui/toast';
 
-// Define the initial destinations for a horizontal layout
-const initialNodes: Node<DestinationNodeData>[] = [
-	{
-		id: '1',
-		position: { x: 50, y: 150 }, // Start node
-		data: {
-			label: 'Munich',
-			description: 'Capital of Bavaria with rich cultural heritage',
-			type: 'city',
-			stayDuration: 3,
-			bestTime: 'Sep-Oct (Oktoberfest)',
-		},
-		type: 'destination',
-	},
-	{
-		id: '2',
-		position: { x: 450, y: 150 }, // Directly right of Munich
-		data: {
-			label: 'Vienna',
-			description: 'City of Music, elegant cafes and imperial palaces',
-			type: 'city',
-			stayDuration: 4,
-			bestTime: 'Apr-May or Sep-Oct',
-		},
-		type: 'destination',
-	},
-	{
-		id: '5',
-		position: { x: 850, y: 400 }, // Below Prague, right of Neuschwanstein
-		data: {
-			label: 'Salzburg',
-			description: 'Birthplace of Mozart with Alpine landscapes',
-			type: 'city',
-			stayDuration: 2,
-			bestTime: 'Jul-Aug or Dec',
-		},
-		type: 'destination',
-	},
-];
+// Context for providing updateNodeData
+interface NodeContextType {
+	updateNodeData: (
+		nodeId: string,
+		dataUpdate: Partial<DestinationNodeData>
+	) => void;
+	nodes: Node<DestinationNodeData>[];
+}
+const NodeContext = createContext<NodeContextType | undefined>(undefined);
 
-// Define the edges for horizontal connections, specifying handle IDs
-const initialEdges: Edge[] = [
-	{
-		id: 'e1-2',
-		source: '1',
-		sourceHandle: 'right', // Specify source handle
-		target: '2',
-		targetHandle: 'left', // Specify target handle
-		label: <TransportIcon type='train' />,
-		data: { type: 'train' },
-	},
-	{
-		id: 'e2-3',
-		source: '2',
-		sourceHandle: 'right',
-		target: '3',
-		targetHandle: 'left',
-		label: <TransportIcon type='plane' />,
-		data: { type: 'plane' },
-	},
-	{
-		id: 'e1-4',
-		source: '1',
-		sourceHandle: 'right', // Connect from right side of Munich
-		target: '4',
-		targetHandle: 'left', // Connect to left side of Neuschwanstein
-		label: <TransportIcon type='bus' />,
-		data: { type: 'bus' },
-	},
-	{
-		id: 'e4-5',
-		source: '4',
-		sourceHandle: 'right',
-		target: '5',
-		targetHandle: 'left',
-		label: <TransportIcon type='bus' />,
-		data: { type: 'bus' },
-	},
-	{
-		id: 'e2-5',
-		source: '2',
-		sourceHandle: 'right', // Connect from right side of Vienna
-		target: '5',
-		targetHandle: 'left', // Connect to left side of Salzburg
-		label: <TransportIcon type='train' />,
-		data: { type: 'train' },
-	},
-	// Removed e1-3, e2-3, e3-5, e4-5, e2-5 if they don't fit horizontal flow
-	// Add connections that make sense horizontally
-];
+export const useNodeContext = () => {
+	const context = useContext(NodeContext);
+	if (!context) {
+		throw new Error('useNodeContext must be used within a NodeProvider');
+	}
+	return context;
+};
 
-const NodeSection = () => {
-	// Register custom node types
-	const nodeTypes = useMemo(
-		() => ({
-			destination: DestinationNode,
-		}),
-		[]
+// Helper to get unique ID for nodes
+const getUID = () => nanoid();
+
+// Wrapper component to provide context
+const NodeSectionWrapper = () => {
+	const { nodes: contextNodes, setNodes: setContextNodes } =
+		useGlobalNodeContext();
+
+	const [edges, setEdges] = useState<Edge[]>([]);
+	const [loading, setLoading] = useState(true);
+
+	// Fetch initial data using the server action
+	useEffect(() => {
+		const loadData = async () => {
+			setLoading(true);
+			try {
+				const { nodes, edges } = await getFlowData();
+				setContextNodes(nodes);
+				setEdges(edges);
+			} catch (error) {
+				console.error('Error loading flow data:', error);
+				toast({
+					title: 'Error',
+					description: 'Could not load itinerary.',
+					variant: 'destructive',
+				});
+			} finally {
+				setLoading(false);
+			}
+		};
+
+		loadData();
+	}, [setContextNodes]);
+
+	// Handle node changes (persist position)
+	const onNodesChange = useCallback(
+		(changes: NodeChange[]) => {
+			setContextNodes((nds: Node<DestinationNodeData>[]) => {
+				const updatedNodes = applyNodeChanges(changes, nds);
+
+				// Find position changes and call server action
+				changes.forEach((change) => {
+					if (change.type === 'position' && change.position) {
+						// Fire and forget for now, add error handling if needed
+						updateNodePositionAction(
+							change.id,
+							change.position
+						).then(({ success, error }) => {
+							if (!success) {
+								console.error(
+									'Failed to update node position:',
+									error
+								);
+								toast({
+									title: 'Sync Error',
+									description:
+										'Failed to save node position.',
+									variant: 'destructive',
+								});
+							}
+						});
+					}
+				});
+
+				return updatedNodes as Node<DestinationNodeData>[];
+			});
+		},
+		[setContextNodes]
 	);
 
-	// Use the hooks as before
-	const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-	const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-	// onConnect remains the same, using addEdge helper
-	const onConnect = useCallback(
-		(params: Edge | Connection) =>
-			setEdges((eds: Edge[]) => addEdge(params, eds)),
+	// Handle edge changes (e.g., deletion - not implemented yet)
+	const onEdgesChange = useCallback(
+		(changes: EdgeChange[]) =>
+			// TODO: Handle edge deletion via server action
+			setEdges((eds: Edge[]) => applyEdgeChanges(changes, eds)),
 		[setEdges]
 	);
 
+	// Handle new connections (add edge)
+	const onConnect = useCallback(
+		async (connection: Connection) => {
+			// Ensure source and target are present
+			if (!connection.source || !connection.target) return;
+
+			// Optimistically create edge with temporary ID (or leave it out)
+			// const tempEdge = { ...connection, type: 'custom', id: `temp-${nanoid()}` };
+			// setEdges((eds) => addEdge(tempEdge, eds));
+
+			try {
+				const result = await addEdgeAction(
+					connection.source,
+					connection.target,
+					{} // Pass empty data initially, or default type/duration
+				);
+
+				if (result.error) {
+					toast({
+						title: 'Error Creating Connection',
+						description: result.error,
+						variant: 'destructive',
+					});
+					// Remove optimistic edge if added
+					// setEdges((eds) => eds.filter((e) => e.id !== tempEdge.id));
+				} else if (result.edge) {
+					// Add the actual edge returned from the server
+					setEdges((eds: Edge[]) => addEdge(result.edge!, eds));
+					toast({
+						title: 'Connection Created',
+						description: 'Edge saved successfully.',
+					});
+				} else {
+					throw new Error(
+						'Server action did not return an edge or error.'
+					);
+				}
+			} catch (error) {
+				console.error('Failed to add edge:', error);
+				toast({
+					title: 'Error',
+					description: 'Could not create connection.',
+					variant: 'destructive',
+				});
+				// Remove optimistic edge if added
+				// setEdges((eds) => eds.filter((e) => e.id !== tempEdge.id));
+			}
+		},
+		[setEdges]
+	);
+
+	// Handle updates to node details (label, dates, etc.) from DestinationNode
+	const updateNodeData = useCallback(
+		async (nodeId: string, dataUpdate: Partial<DestinationNodeData>) => {
+			// Optimistically update local state first
+			setContextNodes((nds: Node<DestinationNodeData>[]) =>
+				nds.map((node: Node<DestinationNodeData>) =>
+					node.id === nodeId
+						? { ...node, data: { ...node.data, ...dataUpdate } }
+						: node
+				)
+			);
+
+			// Prepare payload for server action, converting dates
+			const updatePayload: Record<string, any> = { ...dataUpdate };
+			if (dataUpdate.startDate instanceof Date) {
+				updatePayload.startDate = dataUpdate.startDate.toISOString();
+			}
+			if (dataUpdate.endDate instanceof Date) {
+				updatePayload.endDate = dataUpdate.endDate.toISOString();
+			}
+
+			// Call the server action to persist the change
+			try {
+				const result = await updateNodeDetailsAction(
+					nodeId,
+					updatePayload
+				);
+				if (!result.success) {
+					console.error(
+						'Failed to update node details:',
+						result.error
+					);
+					toast({
+						title: 'Sync Error',
+						description: 'Failed to save node details.',
+						variant: 'destructive',
+					});
+					// Optionally revert optimistic update here
+				}
+			} catch (error) {
+				console.error('Error calling updateNodeDetailsAction:', error);
+				toast({
+					title: 'Error',
+					description: 'Could not save node details.',
+					variant: 'destructive',
+				});
+				// Optionally revert optimistic update here
+			}
+		},
+		[setContextNodes]
+	);
+
+	if (loading) {
+		return <div>Loading itinerary...</div>;
+	}
+
 	return (
-		<div className='w-full h-full border rounded-lg overflow-hidden'>
-			<ReactFlow
-				nodes={nodes}
-				edges={edges}
-				onNodesChange={onNodesChange}
-				onEdgesChange={onEdgesChange}
-				onConnect={onConnect}
-				nodeTypes={nodeTypes}
-				fitView
-				fitViewOptions={{ padding: 0.2 }} // Add padding for better initial view
-				attributionPosition='bottom-right'
-				minZoom={0.4}
-				maxZoom={1.5}
-				defaultViewport={{ x: 0, y: 0, zoom: 0.7 }} // Adjust initial zoom/pan
+		<ReactFlowProvider>
+			<NodeContext.Provider
+				value={{ updateNodeData, nodes: contextNodes }}
 			>
-				<Background
-					style={{ backgroundColor: 'hsl(var(--background))' }}
+				<NodeSection
+					nodes={contextNodes}
+					edges={edges}
+					onNodesChange={onNodesChange}
+					onEdgesChange={onEdgesChange}
+					onConnect={onConnect}
+					setNodes={setContextNodes}
 				/>
-			</ReactFlow>
-		</div>
+			</NodeContext.Provider>
+		</ReactFlowProvider>
 	);
 };
 
-export default NodeSection;
+interface NodeSectionProps {
+	nodes: Node<DestinationNodeData>[];
+	edges: Edge[];
+	onNodesChange: (changes: NodeChange[]) => void;
+	onEdgesChange: (changes: EdgeChange[]) => void;
+	onConnect: (connection: Connection) => void;
+	setNodes: React.Dispatch<React.SetStateAction<Node<DestinationNodeData>[]>>;
+}
+
+const NodeSection = ({
+	nodes,
+	edges,
+	onNodesChange,
+	onEdgesChange,
+	onConnect,
+	setNodes,
+}: NodeSectionProps) => {
+	const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
+	// Remove the 'as any' cast, hoping the refactor fixed the type issue
+	const nodeTypes: NodeTypes = useMemo<NodeTypes>(
+		() => ({ destination: DestinationNode }),
+		[]
+	);
+
+	// Remove the 'as any' cast for edgeTypes
+	const edgeTypes: EdgeTypes = useMemo<EdgeTypes>(
+		() => ({ custom: CustomEdge }),
+		[]
+	);
+
+	// Update addNode to use the server action
+	const addNode = useCallback(async () => {
+		// Remove client-side Supabase logic
+		// const supabase = createClient();
+		const position = { x: Math.random() * 500, y: Math.random() * 300 };
+		// Remove local newNodeData definition
+		// const newNodeData = { ... };
+
+		try {
+			const result = await addNodeAction(position);
+
+			if (result.error) {
+				throw new Error(result.error);
+			}
+
+			if (result.node) {
+				// Update context state with the node returned from the server action
+				setNodes((nds) => nds.concat(result.node!));
+			} else {
+				console.error('Server action did not return a node.');
+			}
+		} catch (error) {
+			console.error('Error adding node:', error);
+			// Handle error display to the user if needed
+		}
+	}, [setNodes]); // Dependency is the state setter function
+
+	return (
+		<ContextMenu>
+			<ContextMenuTrigger asChild>
+				<div
+					className='w-full h-full border rounded-lg overflow-hidden'
+					ref={reactFlowWrapper}
+				>
+					<ReactFlow
+						nodes={nodes}
+						edges={edges}
+						onNodesChange={onNodesChange}
+						onEdgesChange={onEdgesChange}
+						onConnect={onConnect}
+						nodeTypes={nodeTypes}
+						edgeTypes={edgeTypes}
+						fitView
+						fitViewOptions={{ padding: 0.2 }}
+						attributionPosition='bottom-right'
+						minZoom={0.4}
+						maxZoom={1.5}
+						defaultViewport={{ x: 0, y: 0, zoom: 0.7 }}
+					>
+						<Background
+							style={{
+								backgroundColor: 'hsl(var(--background))',
+							}}
+						/>
+					</ReactFlow>
+				</div>
+			</ContextMenuTrigger>
+			<ContextMenuContent className='w-64'>
+				<ContextMenuItem inset onSelect={addNode}>
+					Add New Destination
+				</ContextMenuItem>
+			</ContextMenuContent>
+		</ContextMenu>
+	);
+};
+
+export default NodeSectionWrapper;
