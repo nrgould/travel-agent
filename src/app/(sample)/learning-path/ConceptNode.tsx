@@ -7,7 +7,7 @@ import { BarChart, BookOpen, Play, ArrowRight, Loader2 } from 'lucide-react';
 import { LearningPathNode } from '@/lib/learning-path-schemas';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { generateUUID } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';

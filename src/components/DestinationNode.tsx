@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { format } from 'date-fns';
 import { DateRange } from 'react-day-picker';
@@ -28,10 +28,12 @@ import {
 	MapPin,
 	Calendar as CalendarIcon,
 	Info,
+	Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DestinationSheet, DestinationDetails } from './DestinationSheet';
 import { useNodeContext } from './NodeSection';
+import { useDateStore } from '@/store/dateStore';
 
 // Define the shape of our node data
 export interface DestinationNodeData {
@@ -215,6 +217,10 @@ interface DestinationNodeProps {
 	data: DestinationNodeData; // Your data object
 	selected?: boolean; // Selected state from React Flow (optional)
 	isConnectable?: boolean; // isConnectable is still passed
+	onDelete?: (id: string) => void; // Add delete callback
+	// Date constraint props
+	prevNodeEndDate?: Date; // End date of the previous node in sequence
+	nextNodeStartDate?: Date; // Start date of the next node in sequence
 	// Remove unused position/state props for now
 	// xPos?: number;
 	// yPos?: number;
@@ -230,11 +236,20 @@ export function DestinationNode({
 	data,
 	selected,
 	isConnectable,
+	onDelete,
+	prevNodeEndDate,
+	nextNodeStartDate,
 }: // Remove unused props from destructuring
 // xPos,
 // yPos,
 DestinationNodeProps) {
 	const { updateNodeData } = useNodeContext();
+	const {
+		lastAvailableDate,
+		earliestAvailableDate,
+		setLastAvailableDate,
+		setEarliestAvailableDate,
+	} = useDateStore();
 	const [isSheetOpen, setIsSheetOpen] = useState(false);
 	const [isEditingTitle, setIsEditingTitle] = useState(false);
 	const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
@@ -244,6 +259,51 @@ DestinationNodeProps) {
 		}
 		return undefined;
 	});
+
+	// Update global date store when this node's dates change
+	useEffect(() => {
+		// Only update if we have valid dates
+		if (!data.startDate && !data.endDate) return;
+
+		try {
+			// Make sure we're working with valid Date objects
+			if (data.startDate) {
+				const startDate =
+					data.startDate instanceof Date
+						? data.startDate
+						: new Date(data.startDate);
+
+				// Only update if this is actually the earliest date
+				if (
+					!earliestAvailableDate ||
+					startDate < earliestAvailableDate
+				) {
+					setEarliestAvailableDate(startDate);
+				}
+			}
+
+			if (data.endDate) {
+				const endDate =
+					data.endDate instanceof Date
+						? data.endDate
+						: new Date(data.endDate);
+
+				// Only update if this is actually the latest date
+				if (!lastAvailableDate || endDate > lastAvailableDate) {
+					setLastAvailableDate(endDate);
+				}
+			}
+		} catch (error) {
+			console.error('Error handling date updates:', error);
+		}
+	}, [
+		data.startDate,
+		data.endDate,
+		earliestAvailableDate,
+		lastAvailableDate,
+		setEarliestAvailableDate,
+		setLastAvailableDate,
+	]);
 
 	// Get details from our map, or use a fallback if not found
 	const getNodeDetails = (): DestinationDetails | null => {
@@ -281,9 +341,18 @@ DestinationNodeProps) {
 
 	// Handle date range selection
 	const handleDateSelect = (range: DateRange | undefined) => {
+		// Update local state
 		setDateRange(range);
-		// Pass id from props
-		updateNodeData(id, { startDate: range?.from, endDate: range?.to });
+
+		// Only update node data when we have a complete range
+		if (range && range.from && range.to) {
+			updateNodeData(id, {
+				startDate: range.from,
+				endDate: range.to,
+			});
+		}
+		// If only start date is set, don't update node data yet
+		// This allows the user to select the end date without the popover closing
 	};
 
 	return (
@@ -398,6 +467,20 @@ DestinationNodeProps) {
 							<PopoverContent
 								className='w-auto p-0'
 								align='start'
+								// Make sure the popover doesn't close on selection
+								onInteractOutside={(e) => {
+									// Only close if we click outside completely
+									// This helps prevent the popover from closing when selecting dates
+									const currentTarget =
+										e.currentTarget as HTMLElement;
+									const target = e.target as Node;
+									if (
+										currentTarget &&
+										!currentTarget.contains(target)
+									) {
+										e.preventDefault();
+									}
+								}}
 							>
 								<Calendar
 									initialFocus
@@ -406,6 +489,17 @@ DestinationNodeProps) {
 									selected={dateRange}
 									onSelect={handleDateSelect}
 									numberOfMonths={1}
+									// Use basic constraints but without type issues
+									fromDate={
+										prevNodeEndDate
+											? new Date(prevNodeEndDate)
+											: undefined
+									}
+									toDate={
+										nextNodeStartDate
+											? new Date(nextNodeStartDate)
+											: undefined
+									}
 								/>
 							</PopoverContent>
 						</Popover>
@@ -426,16 +520,30 @@ DestinationNodeProps) {
 					</div>
 				</CardContent>
 
-				<CardFooter className='pt-2 pb-3 flex justify-between'>
+				<CardFooter className='pt-2 pb-3 flex justify-between gap-2'>
 					<Button
 						variant='outline'
 						size='sm'
-						className='text-xs h-7 w-full'
+						className='text-xs h-7 flex-1'
 						onClick={() => setIsSheetOpen(true)}
 					>
 						<Info className='h-3.5 w-3.5 mr-1.5' />
 						Details
 					</Button>
+
+					{onDelete && (
+						<Button
+							variant='outline'
+							size='sm'
+							className='text-xs h-7 w-9 text-destructive hover:text-destructive hover:bg-destructive/10'
+							onClick={(e) => {
+								e.stopPropagation();
+								if (onDelete) onDelete(id);
+							}}
+						>
+							<Trash2 className='h-3.5 w-3.5' />
+						</Button>
+					)}
 				</CardFooter>
 			</Card>
 

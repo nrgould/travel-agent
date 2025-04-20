@@ -9,11 +9,14 @@ interface SupabaseNode {
 	id: string;
 	name: string;
 	position: { x: number; y: number };
-	// Add other fields matching the 'nodes' table schema
-	label?: string; // Assuming label maps to name
-	startDate?: string; // Store dates as ISO strings in DB?
-	endDate?: string;
-	// Add other potential fields from DestinationNodeData if they map to DB columns
+	metadata?: Record<string, any>;
+	description?: string;
+	type?: 'city' | 'landmark' | 'attraction';
+	updated_at?: string;
+	start_date?: string; // ISO string format for timestamptz
+	end_date?: string; // ISO string format for timestamptz
+	// Map frontend to backend field names
+	label?: string; // Maps to name
 }
 
 interface SupabaseEdge {
@@ -43,7 +46,9 @@ export async function getFlowData(): Promise<FlowData> {
 		// Fetch nodes
 		const { data: nodesData, error: nodesError } = await supabase
 			.from('nodes')
-			.select('id, name, position');
+			.select(
+				'id, name, position, metadata, description, type, start_date, end_date'
+			);
 
 		if (nodesError) throw nodesError;
 
@@ -54,21 +59,41 @@ export async function getFlowData(): Promise<FlowData> {
 
 		if (edgesError) throw edgesError;
 
+		console.log('nodesData', nodesData);
+		console.log('edgesData', edgesData);
+
 		// Type assertion (consider using generated types later if complex)
 		const typedNodes = (nodesData || []) as SupabaseNode[];
 		const typedEdges = (edgesData || []) as SupabaseEdge[];
 
 		// Transform nodesData to React Flow Node format
 		const formattedNodes: Node<DestinationNodeData>[] = typedNodes.map(
-			(node) => ({
-				id: node.id,
-				position: node.position,
-				data: {
-					label: node.name,
-					// Add other necessary fields from DestinationNodeData with defaults or fetched values
-				},
-				type: 'destination',
-			})
+			(node) => {
+				// Parse dates from the dedicated timestamp columns
+				let startDate = undefined;
+				let endDate = undefined;
+
+				if (node.start_date) {
+					startDate = new Date(node.start_date);
+				}
+
+				if (node.end_date) {
+					endDate = new Date(node.end_date);
+				}
+
+				return {
+					id: node.id,
+					position: node.position,
+					data: {
+						label: node.name,
+						description: node.description,
+						type: node.type,
+						startDate: startDate,
+						endDate: endDate,
+					},
+					type: 'destination',
+				};
+			}
 		);
 
 		// Transform edgesData to React Flow Edge format
@@ -92,18 +117,32 @@ export async function getFlowData(): Promise<FlowData> {
 }
 
 // Server action for adding a node
-export async function addNodeAction(position: { x: number; y: number }) {
+export async function addNodeAction(
+	position: { x: number; y: number },
+	additionalData?: {
+		startDate?: string;
+		endDate?: string;
+		[key: string]: any;
+	}
+) {
 	const supabase = await createServerSupabaseClient();
 	const newNodeData = {
 		name: 'New Destination',
 		position: position,
+		description: 'Add details here',
+		type: 'city' as const,
+		metadata: {},
+		start_date: additionalData?.startDate,
+		end_date: additionalData?.endDate,
 	};
 
 	try {
 		const { data, error } = await supabase
 			.from('nodes')
 			.insert(newNodeData)
-			.select('id, name, position')
+			.select(
+				'id, name, position, description, type, metadata, start_date, end_date'
+			)
 			.single();
 
 		if (error) {
@@ -119,8 +158,14 @@ export async function addNodeAction(position: { x: number; y: number }) {
 				position: typedNode.position,
 				data: {
 					label: typedNode.name,
-					description: 'Add details here',
-					type: 'city',
+					description: typedNode.description || 'Add details here',
+					type: typedNode.type || 'city',
+					startDate: typedNode.start_date
+						? new Date(typedNode.start_date)
+						: undefined,
+					endDate: typedNode.end_date
+						? new Date(typedNode.end_date)
+						: undefined,
 				},
 				type: 'destination',
 			};
@@ -171,12 +216,11 @@ export async function updateNodePositionAction(
 // Server action to update node details (label, dates, etc.)
 export async function updateNodeDetailsAction(
 	nodeId: string,
-	dataUpdate: Partial<SupabaseNode> // Type more specifically
+	dataUpdate: Partial<SupabaseNode>
 ): Promise<{ success: boolean; error?: string }> {
 	const supabase = await createServerSupabaseClient();
 
 	// Prepare the update object
-	// Explicitly type as Record<string, any> since we modify keys
 	const updateObject: Record<string, any> = {
 		...dataUpdate,
 		updated_at: new Date().toISOString(),
@@ -187,21 +231,51 @@ export async function updateNodeDetailsAction(
 		updateObject.name = updateObject.label;
 		delete updateObject.label;
 	}
-	// Handle date conversion if stored differently (e.g., Date to ISO string)
-	if (updateObject.startDate instanceof Date) {
-		updateObject.startDate = updateObject.startDate.toISOString();
-	}
-	if (updateObject.endDate instanceof Date) {
-		updateObject.endDate = updateObject.endDate.toISOString();
+
+	// Handle date conversion for dedicated timestamp columns
+	if ('startDate' in updateObject) {
+		if (updateObject.startDate instanceof Date) {
+			updateObject.start_date = updateObject.startDate.toISOString();
+		} else if (updateObject.startDate) {
+			updateObject.start_date = updateObject.startDate;
+		} else {
+			updateObject.start_date = null; // Allow clearing the date
+		}
+		delete updateObject.startDate;
 	}
 
-	// Remove any fields not actually in the DB schema before updating
-	// delete updateObject.someFieldNotInNodesTable;
+	if ('endDate' in updateObject) {
+		if (updateObject.endDate instanceof Date) {
+			updateObject.end_date = updateObject.endDate.toISOString();
+		} else if (updateObject.endDate) {
+			updateObject.end_date = updateObject.endDate;
+		} else {
+			updateObject.end_date = null; // Allow clearing the date
+		}
+		delete updateObject.endDate;
+	}
+
+	// Make sure we only include fields that exist in the database schema
+	const validFields = [
+		'name',
+		'position',
+		'metadata',
+		'description',
+		'type',
+		'updated_at',
+		'start_date',
+		'end_date',
+	];
+	const filteredUpdate = Object.fromEntries(
+		Object.entries(updateObject).filter(([key]) =>
+			validFields.includes(key)
+		)
+	);
 
 	try {
 		const { error } = await supabase
 			.from('nodes')
-			.update(updateObject)
+			.update(filteredUpdate)
 			.eq('id', nodeId);
 
 		if (error) {
@@ -280,5 +354,59 @@ export async function addEdgeAction(
 				? error.message
 				: 'An unknown error occurred';
 		return { error: message };
+	}
+}
+
+// Server action to delete a node
+export async function deleteNodeAction(
+	nodeId: string
+): Promise<{ success: boolean; error?: string }> {
+	const supabase = await createServerSupabaseClient();
+
+	try {
+		// First, delete any associated edges where this node is a source
+		const { error: sourceEdgesError } = await supabase
+			.from('edges')
+			.delete()
+			.eq('source_node_id', nodeId);
+
+		if (sourceEdgesError) {
+			console.error('Error deleting source edges:', sourceEdgesError);
+			return { success: false, error: sourceEdgesError.message };
+		}
+
+		// Then delete edges where this node is a target
+		const { error: targetEdgesError } = await supabase
+			.from('edges')
+			.delete()
+			.eq('target_node_id', nodeId);
+
+		if (targetEdgesError) {
+			console.error('Error deleting target edges:', targetEdgesError);
+			return { success: false, error: targetEdgesError.message };
+		}
+
+		// Finally delete the node
+		const { error: nodeError } = await supabase
+			.from('nodes')
+			.delete()
+			.eq('id', nodeId);
+
+		if (nodeError) {
+			console.error('Error deleting node:', nodeError);
+			return { success: false, error: nodeError.message };
+		}
+
+		return { success: true };
+	} catch (error: unknown) {
+		console.error('Error in deleteNodeAction:', error);
+		const message =
+			error instanceof Error
+				? error.message
+				: 'An unknown error occurred';
+		return {
+			success: false,
+			error: message,
+		};
 	}
 }

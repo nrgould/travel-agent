@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
 import { useRouter, usePathname } from 'next/navigation';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import {
 	ContextMenu,
 	ContextMenuContent,
@@ -139,9 +139,7 @@ export function LearningPathSidebar({
 		return (
 			<div className={className}>
 				<div className='p-4 border-b flex justify-between items-center'>
-					<h3 className='font-semibold text-sm'>
-						Your Paths
-					</h3>
+					<h3 className='font-semibold text-sm'>Your Paths</h3>
 					<Skeleton className='h-8 w-8' />
 				</div>
 				<ScrollArea className={containerClassName}>
