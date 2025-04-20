@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ControlPanel from '@/components/ControlPanel';
 import MadeBy from '@/components/MadeBy';
 import MapSection from '@/components/MapSection';
@@ -13,10 +13,36 @@ import {
 	ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { NodeProvider } from '@/components/NodeContext';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 export default function Home() {
-	const [isMapVisible, setMapVisible] = useState(true);
-	const [isNodeVisible, setNodeVisible] = useState(true);
+	const searchParams = useSearchParams();
+	const router = useRouter();
+
+	// Get initial visibility from URL params or default to true
+	const initialMapVisible = searchParams.get('map') !== 'false';
+	const initialNodeVisible = searchParams.get('node') !== 'false';
+
+	const [isMapVisible, setMapVisible] = useState(initialMapVisible);
+	const [isNodeVisible, setNodeVisible] = useState(initialNodeVisible);
+
+	// Update URL when visibility changes
+	useEffect(() => {
+		const params = new URLSearchParams(searchParams.toString());
+		params.set('map', isMapVisible.toString());
+		params.set('node', isNodeVisible.toString());
+		const newUrl = `${window.location.pathname}?${params.toString()}`;
+		window.history.replaceState(null, '', newUrl);
+	}, [isMapVisible, isNodeVisible, searchParams]);
+
+	// Custom setters that update both state and URL
+	const updateMapVisibility = (visible: boolean) => {
+		setMapVisible(visible);
+	};
+
+	const updateNodeVisibility = (visible: boolean) => {
+		setNodeVisible(visible);
+	};
 
 	return (
 		<NodeProvider>
@@ -27,9 +53,9 @@ export default function Home() {
 				<div className='absolute bottom-5 left-1/2 -translate-x-1/2 z-20'>
 					<ControlPanel
 						isMapVisible={isMapVisible}
-						setMapVisible={setMapVisible}
+						setMapVisible={updateMapVisibility}
 						isNodeVisible={isNodeVisible}
-						setNodeVisible={setNodeVisible}
+						setNodeVisible={updateNodeVisibility}
 					/>
 				</div>
 				<div className='absolute top-5 right-5 z-20'>
