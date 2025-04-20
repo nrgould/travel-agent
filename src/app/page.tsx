@@ -15,7 +15,7 @@ import {
 import { NodeProvider } from '@/components/NodeContext';
 
 export default function Home() {
-	const [isMapVisible, setMapVisible] = useState(false);
+	const [isMapVisible, setMapVisible] = useState(true);
 	const [isNodeVisible, setNodeVisible] = useState(true);
 
 	return (
